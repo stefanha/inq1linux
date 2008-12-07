@@ -1,0 +1,36 @@
+#!/bin/sh
+# 
+# Modified for inq1linux
+# Based on: $Id: gprs-connect-chat,v 1.2 2004/02/02 23:19:28 mcfrisk Exp $
+#
+# File: 
+# inq1-connect-chat
+#
+# Description: 
+# chat script to open 3 UK service with INQ1 mobile phone. If ppp 
+# negotiation stalls, try restarting the phone. To try with other GPRS 
+# operator setting, change the PDP contex setting.
+exec chat 						\
+	TIMEOUT		5				\
+	ECHO 		ON				\
+	ABORT		'\nBUSY\r'			\
+	ABORT		'\nERROR\r'			\
+	ABORT		'\nNO ANSWER\r'			\
+	ABORT		'\nNO CARRIER\r'		\
+	ABORT		'\nNO DIALTONE\r'		\
+	ABORT		'\nRINGING\r\n\r\nRINGING\r'	\
+	''		"\rAT"				\
+	TIMEOUT		12				\
+	SAY		"Press CTRL-C to close the connection at any stage!"	\
+	SAY		"\ndefining PDP context...\n"	\
+	OK		ATE0V1				\
+	OK		AT				\
+	OK		'AT+CGDCONT=1,"IP","three.co.uk","",0,0'	\
+	OK		ATS0=0				\
+	OK		ATDT*99#			\
+	TIMEOUT		22				\
+	SAY		"\nwaiting for connect...\n"	\
+	CONNECT		""				\
+	SAY		"\nConnected." \
+	SAY		"\nIf the following ppp negotiations fail,\n"	\
+	SAY		"try restarting the phone.\n"

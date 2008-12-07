@@ -1,0 +1,112 @@
+# Modified for inq1linux
+# Based on: $Id: gprs,v 1.4 2004/04/28 08:40:32 mcfrisk Exp $
+#
+# File:
+# inq1
+#
+# Description:
+# Options for INQ1 mobile phone as USB modem.
+# See 'man pppd' for detailed option descriptions.
+
+# Most GPRS phones don't reply to LCP echo's
+lcp-echo-failure 0
+lcp-echo-interval 0
+
+# Keep pppd attached to the terminal:
+# Comment this to get daemon mode pppd
+nodetach
+
+# Debug info from pppd:
+# Comment this off, if you don't need more info
+debug
+
+# Show password in debug messages
+show-password
+
+# Connect script to initialize the modem and start the connection
+connect /etc/ppp/peers/inq1-connect-chat
+
+# Disconnect script:
+# AT commands used to 'hangup' the connection.
+disconnect /etc/ppp/peers/inq1-disconnect-chat
+
+# Serial device to which the INQ1 mobile phone is connected:
+/dev/pts/1	# check output of usbserial program
+
+# Serial port line speed
+115200	# fast enough
+
+# Hardware flow control:
+# Use hardware flow control with cable, Bluetooth and USB but not with IrDA.
+crtscts  # serial cable, Bluetooth and USB, on some occations with IrDA too
+
+# Ignore carrier detect signal from the modem:
+local
+
+# IP addresses:
+# - accept peers idea of our local address and set address peer as 10.0.0.1 
+# (any address would do, since IPCP gives 0.0.0.0 to it)
+# - if you use the 10. network at home or something and pppd rejects it,
+# change the address to something else 
+:10.0.0.1
+
+# pppd must not propose any IP address to the peer!
+noipdefault
+
+# Accept peers idea of our local address
+ipcp-accept-local
+
+# Add the ppp interface as default route to the IP routing table
+defaultroute
+
+# Newer pppd's also support replacing the default route, if one is 
+# already present, when the GPRS connetion should be set as the default route
+# to the network
+#replacedefaultroute
+
+# DNS servers from the phone:
+# some phones support this, some don't.
+usepeerdns
+
+# ppp compression:
+# ppp compression may be used between the phone and the pppd, but the 
+# serial connection is usually not the bottleneck in GPRS, so the 
+# compression is useless (and with some phones need to disabled before 
+# the LCP negotiations succeed).
+novj
+nobsdcomp
+novjccomp
+nopcomp
+noaccomp
+
+# The phone is not required to authenticate:
+noauth
+
+# Username and password:
+# If username and password are required by the APN, put here the username 
+# and put the username-password combination to the secrets file: 
+# /etc/ppp/pap-secrets for PAP and /etc/ppp/chap-secrets for CHAP 
+# authentication. See pppd man pages for details.
+# Example, Radiolinja operator pap-secrets: 
+# "rlnet"         *       "internet"	*
+user "guest"
+
+# The persist tries to reopen the connection if it is dropped. This
+# is usefull for example with a Nokia 7650 which only manages to
+# 'dial' with every second attempt or when the network likes to drop the
+# connection every now and then. It's not fun when the over-night 
+# 'apt-get dist-upgrade -d -y' fails constantly...
+#persist
+#maxfail 99
+
+# Asyncmap:
+# some phones may require this option.
+#asyncmap 0xa0000
+
+# No magic:
+# some phones may require this option.
+#nomagic
+
+# Require PAP authentication:
+# some phones may require this option.
+#require-pap
