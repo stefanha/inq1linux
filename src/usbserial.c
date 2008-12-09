@@ -1,22 +1,35 @@
 #include <stdio.h>
+#include <termios.h>
 #include <pthread.h>
 #include <errno.h>
 #include <pty.h>
 #include <usb.h>
 
-/* USB serial driver for INQ1 modem.  The modem is accessed using
- * bulk reads and writes.  There is also an interrupt endpoint.
+/* USB serial driver for INQ1 serial devices.  This includes the modem,
+ * diagnostics, and NMEA interfaces.
+ *
+ * The modem is accessed using bulk reads and writes.  There is also an
+ * interrupt endpoint.
  */
 
 enum {
     VENDOR_AMOI = 0x1614,
     PRODUCT_INQ1 = 0x0408,
-    INTF_SERIAL = 0, /* USB interface */
-    EP_SERIAL = 2, /* USB endpoint.  Note there is also endpoint #1
-                    * which provides interrupts but we ignore it. */
     TIMEOUT = 0, /* milliseconds */
 };
 
+/* Known interfaces */
+static const struct iface_info {
+    const char *name;
+    int usb_iface; /* interface */
+    int usb_ep; /* endpoint */
+} ifaces[] = {
+    {"modem", 0, 0x2},
+    {"diag", 1, 0xd},
+    {NULL, 0, 0}
+};
+
+static const struct iface_info *iface;
 static struct usb_dev_handle *devh;
 static int fd;
 
@@ -92,11 +105,25 @@ static int my_usb_bulk_write(struct usb_dev_handle *devh, int ep, char *buf, int
 #define my_usb_bulk_write usb_bulk_write
 #endif
 
-static void init(void)
+static void usage(void)
 {
-    usb_init();
-    usb_find_busses();
-    usb_find_devices();
+    fprintf(stderr, "usage: usbserial [IFNAME]\n");
+    exit(1);
+}
+
+static void select_iface(const char *name)
+{
+    for (iface = &ifaces[0]; iface->name; iface++) {
+        if (!strcmp(name, iface->name)) {
+            return;
+        }
+    }
+    fprintf(stderr, "interface name must be one of: ");
+    for (iface = &ifaces[0]; iface->name; iface++) {
+        fprintf(stderr, "%s ", iface->name);
+    }
+    fprintf(stderr, "\n");
+    exit(1);
 }
 
 static struct usb_device *find_device(uint16_t vendor, uint16_t product)
@@ -129,26 +156,66 @@ static struct usb_device *wait_for_device(uint16_t vendor, uint16_t product)
     exit(1);
 }
 
+static void init_usb(const char *name)
+{
+    struct usb_device *dev;
+    int rc;
+
+    select_iface(name);
+
+    usb_init();
+    usb_find_busses();
+    usb_find_devices();
+
+    dev = wait_for_device(VENDOR_AMOI, PRODUCT_INQ1);
+    devh = usb_open(dev);
+    if (!devh) {
+        fprintf(stderr, "usb_open failed\n");
+        exit(1);
+    }
+
+    if ((rc = usb_claim_interface(devh, iface->usb_iface)) < 0) {
+        fprintf(stderr, "usb_claim_interface failed (%d)\n", rc);
+        exit(1);
+    }
+}
+
+static void init_pty(void)
+{
+    char path[PATH_MAX];
+    struct termios tios;
+    int slave;
+
+    if (openpty(&fd, &slave, path, NULL, NULL)) {
+        fprintf(stderr, "openpty failed\n");
+        exit(1);
+    }
+
+    /* Ensure the pty does no special character processing */
+    cfmakeraw(&tios);
+    tcsetattr(fd, TCSANOW, &tios);
+
+    /* Print path of the pty device */
+    printf("%s\n", path);
+    fflush(stdout);
+}
+
 /* Read from pty, write to USB device */
 static void pty_to_usb(void)
 {
     char buf[BUFSIZ];
-    char *p;
     ssize_t nread;
-    int rc;
     while ((nread = my_read(fd, buf, sizeof buf)) > 0) {
-        p = buf;
-        do {
-            if ((rc = my_usb_bulk_write(devh, EP_SERIAL, buf, nread, TIMEOUT)) < 0) {
-                if (rc == -ETIMEDOUT) {
-                    continue;
-                }
-                fprintf(stderr, "usb_bulk_write failed (%d)\n", rc);
+        char *p = buf;
+        while (nread > 0) {
+            int nwritten = my_usb_bulk_write(devh, iface->usb_ep, p, nread, TIMEOUT);
+            if (nwritten <= 0) {
+                fprintf(stderr, "usb_bulk_write failed (%d)\n", nwritten);
                 exit(1);
             }
-            p += rc;
-            nread -= rc;
-        } while (nread > 0);
+            p += nwritten;
+            nread -= nwritten;
+        }
     }
     fprintf(stderr, "read failed (%d)\n", errno);
 }
@@ -158,57 +225,39 @@ static void *usb_to_pty(void *unused)
 {
     char buf[BUFSIZ];
     int nread;
-    do {
-        while ((nread = my_usb_bulk_read(devh, EP_SERIAL, buf, sizeof buf, TIMEOUT)) >= 0) {
-            ssize_t nwritten;
-            char *p = buf;
-            do {
-               nwritten = my_write(fd, buf, nread);
-               if (nwritten < 0) {
-                   fprintf(stderr, "write failed (%d)\n", errno);
-                   exit(1);
-               }
-               p += nwritten;
-               nread -= nwritten;
-            } while (nread > 0);
+    while ((nread = my_usb_bulk_read(devh, iface->usb_ep, buf, sizeof buf, TIMEOUT)) > 0) {
+        char *p = buf;
+        while (nread > 0) {
+            ssize_t nwritten = my_write(fd, p, nread);
+            if (nwritten <= 0) {
+                fprintf(stderr, "write failed (%d)\n", errno);
+                exit(1);
+            }
+            p += nwritten;
+            nread -= nwritten;
         }
-    } while (nread == -ETIMEDOUT);
+    }
     fprintf(stderr, "usb_bulk_read failed (%d)\n", nread);
     return NULL;
 }
 
 int main(int argc, char **argv)
 {
-    struct usb_device *dev;
-    int slave;
-    char path[PATH_MAX];
     pthread_t thread;
-    int rc;
 
-    init();
-    dev = wait_for_device(VENDOR_AMOI, PRODUCT_INQ1);
-    devh = usb_open(dev);
-    if (!devh) {
-        fprintf(stderr, "usb_open failed\n");
-        exit(1);
+    if (argc != 2) {
+        usage();
     }
 
-    if ((rc = usb_claim_interface(devh, INTF_SERIAL)) < 0) {
-        fprintf(stderr, "usb_claim_interface failed (%d)\n", rc);
-        exit(1);
-    }
+    init_usb(argv[1]);
+    init_pty();
 
-    if (openpty(&fd, &slave, path, NULL, NULL)) {
-        fprintf(stderr, "openpty failed\n");
-        exit(1);
-    }
-    printf("%s\n", path);
-    fflush(stdout);
-
+    /* There are two threads, the usb -> pty transfer thread
+     * and the pty -> usb transfer thread (the main thread). */
     pthread_create(&thread, NULL, usb_to_pty, NULL);
     pty_to_usb();
 
-    usb_release_interface(devh, INTF_SERIAL);
+    usb_release_interface(devh, iface->usb_iface);
     usb_close(devh);
     return 0;
 }
