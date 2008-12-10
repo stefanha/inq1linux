@@ -26,6 +26,8 @@ static const struct iface_info {
 } ifaces[] = {
     {"modem", 0, 0x2},
     {"diag", 1, 0xd},
+    {"nmea", 2, 0x6},
+    {"pcsync", 3, 0xf},
     {NULL, 0, 0}
 };
 
