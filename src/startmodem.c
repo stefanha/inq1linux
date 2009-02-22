@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <usb.h>
 
 /* Start the modem.  Before talking to the modem, these

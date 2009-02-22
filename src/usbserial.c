@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <termios.h>
 #include <pthread.h>
 #include <errno.h>
