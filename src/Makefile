@@ -1,8 +1,13 @@
-CFLAGS=-Wall
+CFLAGS = -Wall
+BINS   = sendscsi startmodem usbserial
 
-all: sendscsi startmodem usbserial
+.PHONY: all clean install
+all: $(BINS)
 clean:
-	rm -f sendscsi startmodem usbserial
+	rm -f $(BINS)
+
+install:
+	$(INSTALL) $(BINS) $(PREFIX)
 
 sendscsi: sendscsi.c
 
