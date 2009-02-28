@@ -4,6 +4,8 @@
 #include <pthread.h>
 #include <errno.h>
 #include <pty.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <usb.h>
 
 /* USB serial driver for INQ1 serial devices.  This includes the modem,
@@ -110,7 +112,7 @@ static int my_usb_bulk_write(struct usb_dev_handle *devh, int ep, char *buf, int
 
 static void usage(void)
 {
-    fprintf(stderr, "usage: usbserial [IFNAME]\n");
+    fprintf(stderr, "usage: usbserial IFNAME [COMMAND [ARGS...]]\n");
     exit(1);
 }
 
@@ -183,7 +185,40 @@ static void init_usb(const char *name)
     }
 }
 
-static void init_pty(void)
+static void spawn_command(int argc, char **argv, char *ptypath)
+{
+    int i;
+    char **newargv;
+
+    switch (fork()) {
+        case -1:
+            fprintf(stderr, "fork failed (%d)\n", errno);
+            exit(1);
+        case 0:
+            break;
+        default:
+            return;
+    }
+
+    /* Child closes useless file descriptors */
+    close(fd);
+
+    /* We ought to clean up libusb... */
+
+    /* Append pty path to arguments */
+    newargv = (char **)malloc((argc + 2) * sizeof(char *));
+    for (i = 0; i < argc; i++) {
+        newargv[i] = argv[i];
+    }
+    newargv[i++] = ptypath;
+    newargv[i]   = NULL;
+
+    execvp(newargv[0], newargv);
+    fprintf(stderr, "execvp failed (%d)\n", errno);
+    exit(1);
+}
+
+static void init_pty(int argc, char **argv)
 {
     char path[PATH_MAX];
     struct termios tios;
@@ -198,9 +233,14 @@ static void init_pty(void)
     cfmakeraw(&tios);
     tcsetattr(fd, TCSANOW, &tios);
 
-    /* Print path of the pty device */
-    printf("%s\n", path);
-    fflush(stdout);
+    if (argc == 0) {
+        /* Print path of the pty device */
+        printf("%s\n", path);
+        fflush(stdout);
+    } else {
+        /* Fork and execute given command */
+        spawn_command(argc, argv, path);
+    }
 }
 
 /* Read from pty, write to USB device */
@@ -248,12 +288,12 @@ int main(int argc, char **argv)
 {
     pthread_t thread;
 
-    if (argc != 2) {
+    if (argc < 2) {
         usage();
     }
 
     init_usb(argv[1]);
-    init_pty();
+    init_pty(argc - 2, &argv[2]);
 
     /* There are two threads, the usb -> pty transfer thread
      * and the pty -> usb transfer thread (the main thread). */
@@ -262,5 +302,8 @@ int main(int argc, char **argv)
 
     usb_release_interface(devh, iface->usb_iface);
     usb_close(devh);
+    if (argc > 2) {
+        wait(NULL);
+    }
     return 0;
 }

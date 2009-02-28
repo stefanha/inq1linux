@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Determine script directory
+SCRIPT_DIR=$(dirname "$0")
+
+die() {
+    echo "$1" >&2
+    exit 1
+}
+
+is_modem_exposed() {
+    grep -q "Vendor=1614 ProdID=0408" /proc/bus/usb/devices
+}
+
+expose_modem() {
+    while ! is_modem_exposed
+    do
+        for f in /sys/class/scsi_generic/sg*/device/vendor
+        do
+            dev=$(echo "$f" | grep -Eo "sg[0-9]+")
+            grep -q INQ1 "$f" 2>/dev/null && "$SCRIPT_DIR/sendscsi" "/dev/$dev" && break
+        done
+
+        # The device reconnects and needs time to settle
+        sleep 2
+    done
+}
+
+expose_modem || exit 1
+"$SCRIPT_DIR/startmodem" || exit 1
+exec "$SCRIPT_DIR/usbserial" modem pppd call inq1

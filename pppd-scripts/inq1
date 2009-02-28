@@ -21,7 +21,7 @@ nodetach
 debug
 
 # Show password in debug messages
-show-password
+#show-password
 
 # Connect script to initialize the modem and start the connection
 connect /etc/ppp/peers/inq1-connect-chat
@@ -29,9 +29,6 @@ connect /etc/ppp/peers/inq1-connect-chat
 # Disconnect script:
 # AT commands used to 'hangup' the connection.
 disconnect /etc/ppp/peers/inq1-disconnect-chat
-
-# Serial device to which the INQ1 mobile phone is connected:
-/dev/pts/1	# check output of usbserial program
 
 # Serial port line speed
 115200	# fast enough
@@ -48,7 +45,7 @@ local
 # (any address would do, since IPCP gives 0.0.0.0 to it)
 # - if you use the 10. network at home or something and pppd rejects it,
 # change the address to something else 
-:10.0.0.1
+:10.0.5.1
 
 # pppd must not propose any IP address to the peer!
 noipdefault
@@ -96,7 +93,7 @@ user "guest"
 # 'dial' with every second attempt or when the network likes to drop the
 # connection every now and then. It's not fun when the over-night 
 # 'apt-get dist-upgrade -d -y' fails constantly...
-#persist
+persist
 #maxfail 99
 
 # Asyncmap:

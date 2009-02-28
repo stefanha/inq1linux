@@ -7,7 +7,7 @@ clean:
 	rm -f $(BINS)
 
 install:
-	$(INSTALL) $(BINS) $(PREFIX)
+	$(INSTALL) $(BINS) inq1linux $(PREFIX)
 
 sendscsi: sendscsi.c
 
